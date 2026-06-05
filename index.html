@@ -3,18 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Knowledge Base AI</title>
+<title>Knowledge Base AI — Halliburton</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0f1117; --surface: #1a1d27; --border: #2d3145;
-    --accent: #4f8ef7; --accent2: #7c5cbf;
-    --text: #e8eaf0; --muted: #8b90a8; --green: #3ecf8e;
-    --red: #f87171; --radius: 12px;
+    --bg: #0b0e14; --surface: #111520; --border: #1f2d45;
+    --accent: #3b9ede; --accent2: #e8b84b;
+    --text: #d8e4f0; --muted: #5a7599; --green: #27ae60;
+    --red: #c0392b; --radius: 12px;
   }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', -apple-system, sans-serif; min-height: 100vh; }
+  code, .mono { font-family: 'IBM Plex Mono', monospace; }
 
   /* Layout */
   .app { display: flex; height: 100vh; overflow: hidden; }
@@ -29,6 +31,12 @@
     .sidebar-content { display: none; }
     .sidebar-content.open { display: block; }
   }
+
+  /* Brand */
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-logo { width: 32px; height: 32px; background: var(--accent); color: #fff; font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 18px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .brand-name { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.2; }
+  .brand-sub { font-size: 10px; color: var(--accent2); font-family: 'IBM Plex Mono', monospace; letter-spacing: .5px; text-transform: uppercase; }
 
   /* Sidebar */
   .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
@@ -135,10 +143,13 @@
 <div class="sidebar">
   <div class="sidebar-header">
     <div class="sidebar-toggle" onclick="toggleSidebar()">
-      <h2>📚 <span id="t-title">Knowledge Base AI</span></h2>
+      <div class="brand"><div class="brand-logo">H</div><div><div class="brand-name">Knowledge Base AI</div><div class="brand-sub">Halliburton</div></div></div>
       <span id="sidebar-arrow">▼</span>
     </div>
-    <h2 style="display:flex;align-items:center;gap:8px;" class="hide-mobile">📚 <span id="t-title2">Knowledge Base AI</span></h2>
+    <div class="brand hide-mobile">
+      <div class="brand-logo">H</div>
+      <div><div class="brand-name">Knowledge Base AI</div><div class="brand-sub">Halliburton</div></div>
+    </div>
   </div>
 
   <div class="sidebar-content" id="sidebar-content">
@@ -216,9 +227,10 @@
 <div class="main">
   <div class="chat-area" id="chat-area">
     <div class="welcome" id="welcome">
-      <div style="font-size:48px;margin-bottom:16px">📚</div>
-      <h1 id="t-welcome-title">Knowledge Base AI</h1>
-      <p id="t-welcome-sub">Upload your documents or load from Google Drive, then ask questions in any language.</p>
+      <div style="width:64px;height:64px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:36px;color:white;margin:0 auto 20px">H</div>
+      <h1 id="t-welcome-title" style="font-family:'IBM Plex Sans',sans-serif;font-weight:600">Knowledge Base AI</h1>
+      <div style="font-size:11px;color:var(--accent2);font-family:'IBM Plex Mono',monospace;letter-spacing:1px;text-transform:uppercase;margin:4px 0 12px">Halliburton</div>
+      <p id="t-welcome-sub" style="color:var(--muted)">Upload your documents or load from Google Drive, then ask questions. Answers are grounded strictly in your documents.</p>
     </div>
   </div>
 
