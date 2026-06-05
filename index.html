@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Base AI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2d3145;
+    --accent: #4f8ef7; --accent2: #7c5cbf;
+    --text: #e8eaf0; --muted: #8b90a8; --green: #3ecf8e;
+    --red: #f87171; --radius: 12px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  /* Layout */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .sidebar { width: 300px; min-width: 300px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Mobile */
+  @media (max-width: 700px) {
+    .app { flex-direction: column; }
+    .sidebar { width: 100%; min-width: unset; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar-toggle { display: flex !important; }
+    .sidebar-content { display: none; }
+    .sidebar-content.open { display: block; }
+  }
+
+  /* Sidebar */
+  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-header h2 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .sidebar-toggle { display: none; align-items: center; justify-content: space-between; cursor: pointer; }
+  .sidebar-content { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+  .lang-selector { display: flex; gap: 6px; }
+  .lang-btn { flex: 1; padding: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 8px; cursor: pointer; font-size: 12px; transition: all .2s; }
+  .lang-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 5px; }
+  input[type=text], input[type=password], input[type=url] {
+    width: 100%; padding: 9px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 13px; outline: none;
+    transition: border-color .2s;
+  }
+  input:focus { border-color: var(--accent); }
+
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 8px; }
+
+  .doc-list { display: flex; flex-direction: column; gap: 6px; }
+  .doc-item { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .doc-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+  .doc-chunks { color: var(--green); font-size: 11px; white-space: nowrap; }
+  .doc-remove { background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; padding: 0 4px; }
+
+  .drive-row { display: flex; gap: 6px; }
+  .drive-row input { flex: 1; }
+
+  /* Buttons */
+  .btn { padding: 9px 14px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all .2s; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #3a7de8; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-sm { padding: 6px 10px; font-size: 12px; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Chat */
+  .chat-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .welcome { text-align: center; margin: auto; max-width: 420px; padding: 40px 20px; }
+  .welcome h1 { font-size: 24px; margin-bottom: 8px; }
+  .welcome p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+  .msg { display: flex; gap: 10px; max-width: 800px; }
+  .msg.user { flex-direction: row-reverse; margin-left: auto; }
+  .msg-bubble { padding: 12px 16px; border-radius: var(--radius); font-size: 14px; line-height: 1.6; max-width: 85%; }
+  .msg.user .msg-bubble { background: var(--accent); color: white; border-bottom-right-radius: 4px; }
+  .msg.assistant .msg-bubble { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+  .msg.user .avatar { background: var(--accent2); }
+  .msg.assistant .avatar { background: var(--surface); border: 1px solid var(--border); }
+
+  .sources { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .sources strong { color: var(--green); }
+  .source-tag { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; margin: 2px; font-size: 11px; }
+
+  /* Input */
+  .input-area { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--surface); }
+  .input-row { display: flex; gap: 10px; align-items: flex-end; }
+  .input-row textarea {
+    flex: 1; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); font-size: 14px; font-family: inherit;
+    resize: none; height: 44px; max-height: 120px; outline: none; line-height: 1.4;
+    transition: border-color .2s;
+  }
+  .input-row textarea:focus { border-color: var(--accent); }
+  .send-btn { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .web-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 8px; cursor: pointer; user-select: none; }
+  .web-toggle input { accent-color: var(--accent); }
+
+  /* Status */
+  .status { font-size: 12px; padding: 6px 10px; border-radius: 6px; }
+  .status.info { background: rgba(79,142,247,.1); color: var(--accent); }
+  .status.success { background: rgba(62,207,142,.1); color: var(--green); }
+  .status.error { background: rgba(248,113,113,.1); color: var(--red); }
+
+  /* Loading dots */
+  .dots { display: inline-flex; gap: 4px; }
+  .dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: bounce .8s infinite; }
+  .dots span:nth-child(2) { animation-delay: .15s; }
+  .dots span:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%,80%,100%{transform:scale(.7);opacity:.5} 40%{transform:scale(1);opacity:1} }
+
+  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .3s; }
+
+  details summary { cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
+  details summary:hover { color: var(--text); }
+  pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-toggle" onclick="toggleSidebar()">
+      <h2>📚 <span id="t-title">Knowledge Base AI</span></h2>
+      <span id="sidebar-arrow">▼</span>
+    </div>
+    <h2 style="display:flex;align-items:center;gap:8px;" class="hide-mobile">📚 <span id="t-title2">Knowledge Base AI</span></h2>
+  </div>
+
+  <div class="sidebar-content" id="sidebar-content">
+
+    <!-- Provider + API Key -->
+    <div>
+      <div class="section-title">AI Provider</div>
+      <div class="lang-selector" style="margin-bottom:8px">
+        <button class="lang-btn active" id="btn-groq" onclick="setProvider('groq')">Groq</button>
+        <button class="lang-btn" id="btn-gemini" onclick="setProvider('gemini')">Gemini</button>
+      </div>
+      <label id="t-api-label">API Key</label>
+      <input type="password" id="api-key" placeholder="gsk_..." oninput="saveApiKey()">
+      <div style="margin-top:5px;font-size:11px;color:var(--muted)" id="api-link-hint">
+        🔗 <a href="https://console.groq.com" target="_blank" style="color:var(--accent)">console.groq.com</a>
+        — бесплатно, 14 000 req/day
+      </div>
+    </div>
+
+    <!-- Google Drive -->
+    <div>
+      <div class="section-title" id="t-drive-title">Google Drive</div>
+      <label id="t-drive-label">Paste public file link</label>
+      <div class="drive-row">
+        <input type="url" id="drive-url" placeholder="https://drive.google.com/file/d/...">
+        <button class="btn btn-primary btn-sm" onclick="loadFromDrive()" id="t-drive-btn">Load</button>
+      </div>
+      <div style="margin-top:5px;font-size:11px;color:var(--muted)" id="t-drive-help">
+        File must be shared publicly (Anyone with link)
+      </div>
+    </div>
+
+    <!-- Upload local -->
+    <div>
+      <div class="section-title" id="t-upload-title">Or upload locally</div>
+      <input type="file" id="file-input" accept=".pdf,.docx,.pptx" multiple style="display:none" onchange="handleFiles(this.files)">
+      <button class="btn btn-ghost" style="width:100%" onclick="document.getElementById('file-input').click()" id="t-upload-btn">
+        📂 Choose files (PDF, DOCX, PPTX)
+      </button>
+    </div>
+
+    <!-- Doc list -->
+    <div id="doc-section" style="display:none">
+      <div class="section-title" id="t-docs-title">Indexed documents</div>
+      <div class="doc-list" id="doc-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="chat-area" id="chat-area">
+    <div class="welcome" id="welcome">
+      <div style="font-size:48px;margin-bottom:16px">📚</div>
+      <h1 id="t-welcome-title">Knowledge Base AI</h1>
+      <p id="t-welcome-sub">Upload your documents or load from Google Drive, then ask questions in any language.</p>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div id="status-bar" style="margin-bottom:8px;display:none"></div>
+    <div class="input-row">
+      <textarea id="question" rows="1" placeholder="Ask a question..." id="t-question-placeholder"
+        onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="btn btn-primary send-btn" onclick="ask()" id="send-btn">➤</button>
+    </div>
+    <label class="web-toggle">
+      <input type="checkbox" id="use-web">
+      <span id="t-web-toggle">Also search the internet (Gemini grounding)</span>
+    </label>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ── PDF.js worker ──
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── State ──
+let chunks = []; // [{text, source, page}]
+let docs = {};   // filename -> chunk count
+
+// ── i18n ──
+const T = {
+  en: {
+    title: "Knowledge Base AI",
+    "lang-label": "Language",
+    "api-label": "Gemini API Key",
+    "api-help": "free tier, 1500 req/day",
+    "drive-title": "Google Drive",
+    "drive-label": "Paste public file link",
+    "drive-btn": "Load",
+    "drive-help": "File must be shared publicly (Anyone with link)",
+    "upload-title": "Or upload locally",
+    "upload-btn": "📂 Choose files (PDF, DOCX, PPTX)",
+    "docs-title": "Indexed documents",
+    "welcome-title": "Knowledge Base AI",
+    "welcome-sub": "Upload your documents or load from Google Drive, then ask questions in any language.",
+    "question-placeholder": "Ask a question...",
+    "web-toggle": "Also search the internet (Gemini grounding)",
+    "sources": "Sources",
+    "page": "p.",
+    "processing": "Processing",
+    "ready": "Ready! {n} chunks indexed.",
+    "no-key": "⚠️ Enter your Gemini API key in the sidebar.",
+    "no-docs": "⚠️ Load at least one document first.",
+    "no-q": "⚠️ Enter a question.",
+    "searching": "Searching...",
+    "loading": "Loading file...",
+    "parsing": "Parsing document...",
+    "err-drive": "Could not load file. Make sure it's shared publicly.",
+  },
+  ru: {
+    title: "ИИ по базе знаний",
+    "lang-label": "Язык",
+    "api-label": "Ключ Gemini API",
+    "api-help": "бесплатный тариф, 1500 запросов/день",
+    "drive-title": "Google Drive",
+    "drive-label": "Вставьте публичную ссылку на файл",
+    "drive-btn": "Загрузить",
+    "drive-help": "Файл должен быть открыт (Все, у кого есть ссылка)",
+    "upload-title": "Или загрузите локально",
+    "upload-btn": "📂 Выбрать файлы (PDF, DOCX, PPTX)",
+    "docs-title": "Проиндексированные документы",
+    "welcome-title": "ИИ по базе знаний",
+    "welcome-sub": "Загрузите документы или добавьте ссылку с Google Drive, затем задавайте вопросы.",
+    "question-placeholder": "Задайте вопрос...",
+    "web-toggle": "Также искать в интернете",
+    "sources": "Источники",
+    "page": "стр.",
+    "processing": "Обработка",
+    "ready": "Готово! Проиндексировано {n} фрагментов.",
+    "no-key": "⚠️ Введите ключ Gemini API в боковой панели.",
+    "no-docs": "⚠️ Сначала загрузите хотя бы один документ.",
+    "no-q": "⚠️ Введите вопрос.",
+    "searching": "Поиск...",
+    "loading": "Загрузка файла...",
+    "parsing": "Обработка документа...",
+    "err-drive": "Не удалось загрузить файл. Убедитесь, что доступ открыт.",
+  },
+  ar: {
+    title: "الذكاء الاصطناعي لقاعدة المعرفة",
+    "lang-label": "اللغة",
+    "api-label": "مفتاح Gemini API",
+    "api-help": "مجاني، 1500 طلب/يوم",
+    "drive-title": "Google Drive",
+    "drive-label": "الصق رابط الملف العام",
+    "drive-btn": "تحميل",
+    "drive-help": "يجب مشاركة الملف بشكل عام",
+    "upload-title": "أو ارفع محلياً",
+    "upload-btn": "📂 اختر الملفات (PDF, DOCX, PPTX)",
+    "docs-title": "المستندات المفهرسة",
+    "welcome-title": "الذكاء الاصطناعي لقاعدة المعرفة",
+    "welcome-sub": "ارفع مستنداتك أو أضف رابط Google Drive ثم اطرح أسئلتك.",
+    "question-placeholder": "اطرح سؤالاً...",
+    "web-toggle": "البحث في الإنترنت أيضاً",
+    "sources": "المصادر",
+    "page": "صفحة",
+    "processing": "معالجة",
+    "ready": "جاهز! تم فهرسة {n} مقطع.",
+    "no-key": "⚠️ أدخل مفتاح Gemini API.",
+    "no-docs": "⚠️ أضف مستنداً واحداً على الأقل.",
+    "no-q": "⚠️ أدخل سؤالاً.",
+    "searching": "جاري البحث...",
+    "loading": "جاري تحميل الملف...",
+    "parsing": "جاري معالجة المستند...",
+    "err-drive": "تعذّر تحميل الملف. تأكد من أنه مشارك بشكل عام.",
+  }
+};
+
+const lang = 'en';
+function t(k) { return T['en'][k] || k; }
+
+// ── Provider ──
+let provider = localStorage.getItem('provider') || 'groq';
+function setProvider(p) {
+  provider = p;
+  localStorage.setItem('provider', p);
+  document.getElementById('btn-groq').classList.toggle('active', p === 'groq');
+  document.getElementById('btn-gemini').classList.toggle('active', p === 'gemini');
+  const hint = document.getElementById('api-link-hint');
+  if (p === 'groq') {
+    hint.innerHTML = '🔗 <a href="https://console.groq.com" target="_blank" style="color:var(--accent)">console.groq.com</a> — бесплатно, 14 000 req/day';
+    document.getElementById('api-key').placeholder = 'gsk_...';
+  } else {
+    hint.innerHTML = '🔗 <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com</a> — бесплатно';
+    document.getElementById('api-key').placeholder = 'AIza...';
+  }
+  const saved = localStorage.getItem(p + '_key');
+  document.getElementById('api-key').value = saved || '';
+}
+
+// ── API Key ──
+function saveApiKey() {
+  localStorage.setItem(provider + '_key', document.getElementById('api-key').value);
+}
+function getApiKey() {
+  return document.getElementById('api-key').value || localStorage.getItem(provider + '_key') || '';
+}
+
+// ── Init ──
+window.onload = () => {
+  setProvider(provider);
+  // mobile: open sidebar by default
+  if (window.innerWidth > 700) {
+    document.getElementById('sidebar-content').classList.add('open');
+  }
+};
+
+// ── Sidebar toggle (mobile) ──
+function toggleSidebar() {
+  const sc = document.getElementById('sidebar-content');
+  sc.classList.toggle('open');
+  document.getElementById('sidebar-arrow').textContent = sc.classList.contains('open') ? '▲' : '▼';
+}
+
+// ── Status bar ──
+function showStatus(msg, type='info') {
+  const bar = document.getElementById('status-bar');
+  bar.style.display = 'block';
+  bar.innerHTML = `<div class="status ${type}">${msg}</div>`;
+}
+function hideStatus() { document.getElementById('status-bar').style.display = 'none'; }
+
+// ── Text chunking ──
+function chunkText(text, source, page, size=300, overlap=40) {
+  const words = text.split(/\s+/).filter(w => w.length > 0);
+  const result = [];
+  for (let i = 0; i < words.length; i += size - overlap) {
+    const chunk = words.slice(i, i + size).join(' ');
+    if (chunk.trim().length > 20) result.push({ text: chunk, source, page });
+  }
+  return result;
+}
+
+// ── PDF Parser ──
+async function parsePDF(arrayBuffer, filename) {
+  showStatus(`${t('parsing')} ${filename}...`, 'info');
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const newChunks = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const text = content.items.map(item => item.str).join(' ');
+    if (text.trim().length > 10) {
+      newChunks.push(...chunkText(text, filename, i));
+    }
+  }
+  return newChunks;
+}
+
+// ── DOCX Parser ──
+async function parseDOCX(arrayBuffer, filename) {
+  showStatus(`${t('parsing')} ${filename}...`, 'info');
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return chunkText(result.value, filename, 1);
+}
+
+// ── PPTX Parser (basic - text extraction via zip) ──
+async function parsePPTX(arrayBuffer, filename) {
+  showStatus(`${t('parsing')} ${filename}...`, 'info');
+  // For PPTX we use a simple approach: treat as ZIP and extract text from XML
+  // This is a fallback - recommend converting to PDF for best results
+  try {
+    const JSZip = (await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm')).default;
+    const zip = await JSZip.loadAsync(arrayBuffer);
+    const slideFiles = Object.keys(zip.files).filter(f => f.match(/ppt\/slides\/slide\d+\.xml/)).sort();
+    const newChunks = [];
+    for (let i = 0; i < slideFiles.length; i++) {
+      const xml = await zip.files[slideFiles[i]].async('string');
+      const text = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text.length > 10) {
+        newChunks.push(...chunkText(text, filename, i + 1));
+      }
+    }
+    return newChunks;
+  } catch(e) {
+    return chunkText('Could not parse PPTX. Please convert to PDF.', filename, 1);
+  }
+}
+
+// ── Index document ──
+async function indexDocument(arrayBuffer, filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  let newChunks = [];
+  if (ext === 'pdf') newChunks = await parsePDF(arrayBuffer, filename);
+  else if (ext === 'docx') newChunks = await parseDOCX(arrayBuffer, filename);
+  else if (ext === 'pptx') newChunks = await parsePPTX(arrayBuffer, filename);
+
+  // Remove old chunks from same doc
+  chunks = chunks.filter(c => c.source !== filename);
+  chunks.push(...newChunks);
+  docs[filename] = newChunks.length;
+  renderDocList();
+  return newChunks.length;
+}
+
+// ── Handle local file upload ──
+async function handleFiles(files) {
+  for (const file of files) {
+    const buf = await file.arrayBuffer();
+    const count = await indexDocument(buf, file.name);
+    showStatus(t('ready').replace('{n}', count), 'success');
+  }
+  document.getElementById('welcome').style.display = 'none';
+}
+
+// ── Load from Google Drive ──
+async function loadFromDrive() {
+  const url = document.getElementById('drive-url').value.trim();
+  if (!url) return;
+
+  // Extract file ID
+  let fileId = '';
+  const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) fileId = m[1];
+  else if (url.includes('id=')) fileId = new URL(url).searchParams.get('id');
+
+  if (!fileId) { showStatus(t('err-drive'), 'error'); return; }
+
+  // Try direct download via CORS proxy or Drive export
+  const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(downloadUrl)}`;
+
+  showStatus(t('loading'), 'info');
+  try {
+    const resp = await fetch(proxyUrl);
+    if (!resp.ok) throw new Error('fetch failed');
+    const buf = await resp.arrayBuffer();
+
+    // Guess filename from Content-Disposition or URL
+    const cd = resp.headers.get('content-disposition') || '';
+    let filename = cd.match(/filename\*?=["']?([^"';\n]+)/)?.[1] || `drive_${fileId}.pdf`;
+    filename = decodeURIComponent(filename.trim());
+
+    const count = await indexDocument(buf, filename);
+    showStatus(t('ready').replace('{n}', count), 'success');
+    document.getElementById('welcome').style.display = 'none';
+    document.getElementById('drive-url').value = '';
+  } catch(e) {
+    showStatus(t('err-drive'), 'error');
+  }
+}
+
+// ── Render doc list ──
+function renderDocList() {
+  const list = document.getElementById('doc-list');
+  const section = document.getElementById('doc-section');
+  section.style.display = Object.keys(docs).length ? 'block' : 'none';
+  list.innerHTML = Object.entries(docs).map(([name, count]) => `
+    <div class="doc-item">
+      <span class="doc-name" title="${name}">📄 ${name}</span>
+      <span class="doc-chunks">${count} chunks</span>
+      <button class="doc-remove" onclick="removeDoc('${name.replace(/'/g,"\\'")}')">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeDoc(name) {
+  chunks = chunks.filter(c => c.source !== name);
+  delete docs[name];
+  renderDocList();
+}
+
+// ── Keyword retrieval with partial matching ──
+function retrieve(query, topK=4) {
+  const qLower = query.toLowerCase();
+  // Split query into meaningful words (length > 2), also keep the full query
+  const qWords = qLower.split(/\s+/).filter(w => w.length > 2);
+
+  const scored = chunks.map(c => {
+    const cLower = c.text.toLowerCase();
+    let score = 0;
+
+    // Exact phrase match — strongest signal
+    if (cLower.includes(qLower)) score += 20;
+
+    // Word-level matches
+    for (const w of qWords) {
+      // Exact word boundary match
+      const exactCount = (cLower.match(new RegExp(`\\b${w}\\b`, 'g')) || []).length;
+      score += exactCount * 3;
+      // Substring match (catches morphology: "шумомер" → "шумомера")
+      if (exactCount === 0 && cLower.includes(w)) score += 1;
+    }
+
+    return { ...c, score };
+  });
+
+  const results = scored.sort((a, b) => b.score - a.score).slice(0, topK).filter(c => c.score > 0);
+
+  // Fallback: if nothing matched, return top chunks by position (beginning of doc often has overview)
+  if (results.length === 0) return [];
+  return results;
+}
+
+// ── Confirm/edit English query ──
+function confirmEnglishQuery(englishQuery) {
+  return new Promise(resolve => {
+    const bar = document.getElementById('status-bar');
+    bar.style.display = 'block';
+    bar.innerHTML = `
+      <div class="status info" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span>🔍 Search in English:</span>
+        <input id="eq-input" type="text" value="${englishQuery.replace(/"/g,'&quot;')}"
+          style="flex:1;min-width:160px;padding:4px 8px;background:var(--bg);border:1px solid var(--accent);border-radius:6px;color:var(--text);font-size:13px">
+        <button class="btn btn-primary btn-sm" onclick="window._eqResolve(document.getElementById('eq-input').value)">Search ➤</button>
+      </div>`;
+    window._eqResolve = (val) => { hideStatus(); resolve(val.trim() || englishQuery); };
+    // Also allow Enter key
+    setTimeout(() => {
+      const inp = document.getElementById('eq-input');
+      if (inp) inp.onkeydown = e => { if (e.key === 'Enter') window._eqResolve(inp.value); };
+    }, 50);
+  });
+}
+
+// ── Translate query to English ──
+async function translateToEnglish(query, apiKey) {
+  // If already English, skip translation call
+  const isEnglish = /^[a-zA-Z0-9\s.,!?'"()\-:;]+$/.test(query.trim());
+  if (isEnglish) return query;
+
+  const prompt = `You are a petroleum engineering / well logging expert translator.
+Translate the following question to English using correct oil & gas industry terminology (e.g. "шумомер" = "Noise Logging Tool", "каротаж" = "well logging", "пласт" = "formation", "скважина" = "wellbore", etc.).
+Return ONLY the translated text, nothing else.
+
+Question: ${query}`;
+
+  try {
+    if (provider === 'groq') {
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0, max_tokens: 200
+        })
+      });
+      const data = await resp.json();
+      return data.choices?.[0]?.message?.content?.trim() || query;
+    } else {
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0, maxOutputTokens: 200 } }) }
+      );
+      const data = await resp.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || query;
+    }
+  } catch {
+    return query; // fallback: use original
+  }
+}
+
+// ── Ask Gemini ──
+async function ask() {
+  const question = document.getElementById('question').value.trim();
+  const apiKey = getApiKey();
+  const useWeb = document.getElementById('use-web').checked;
+
+  if (!apiKey) { showStatus(t('no-key'), 'error'); return; }
+  if (!question) { showStatus(t('no-q'), 'error'); return; }
+  if (chunks.length === 0) { showStatus(t('no-docs'), 'error'); return; }
+
+  // Add user message
+  addMessage('user', question);
+  document.getElementById('question').value = '';
+  document.getElementById('question').style.height = '44px';
+  hideStatus();
+
+  // Add loading indicator
+  const loadId = addLoading();
+  document.getElementById('send-btn').disabled = true;
+
+  // Translate query to English for retrieval
+  showStatus(`🌐 Translating...`, 'info');
+  let englishQuery = await translateToEnglish(question, apiKey);
+
+  // Let user confirm/edit the English query
+  const isEnglish = /^[a-zA-Z0-9\s.,!?'"()\-:;]+$/.test(question.trim());
+  if (!isEnglish) {
+    englishQuery = await confirmEnglishQuery(englishQuery);
+  }
+
+  showStatus(`🔍 Searching: "${englishQuery}"`, 'info');
+
+  // Retrieve relevant chunks using English query
+  const relevant = retrieve(englishQuery);
+
+  if (relevant.length === 0) {
+    removeLoading(loadId);
+    document.getElementById('send-btn').disabled = false;
+    const noFound = `⚠️ Nothing found for "${englishQuery}" in your documents.`;
+    addMessage('assistant', noFound, []);
+    return;
+  }
+
+  const context = relevant.map(c =>
+    `[SOURCE: ${c.source}, PAGE ${c.page}]\n${c.text}`
+  ).join('\n\n---\n\n');
+
+  const prompt = `You are a strict document assistant. Your ONLY job is to answer questions using the CONTEXT below.
+
+STRICT RULES:
+1. ONLY use information from the CONTEXT provided. Do NOT use your general knowledge.
+2. If the context does not contain the answer, say exactly: "This information is not found in the provided documents."
+3. At the end, cite ONLY the sources from the CONTEXT that you actually used (document name + page number).
+4. Do NOT invent, guess, or hallucinate any information.
+5. Respond in English.
+
+CONTEXT (${relevant.length} chunks from user's documents):
+${context}
+
+USER QUESTION: ${question}
+
+Answer based ONLY on the context above:`;
+
+  try {
+    let answer = '';
+
+    if (provider === 'groq') {
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 1024
+        })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message);
+      answer = data.choices?.[0]?.message?.content || 'No response.';
+
+    } else {
+      const body = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 2048 }
+      };
+      if (useWeb) body.tools = [{ google_search_retrieval: {} }];
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      );
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message);
+      answer = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response.';
+    }
+
+    removeLoading(loadId);
+    addMessage('assistant', answer, relevant);
+  } catch(e) {
+    removeLoading(loadId);
+    addMessage('assistant', `❌ Error: ${e.message}`);
+  }
+
+  document.getElementById('send-btn').disabled = false;
+}
+
+// ── Chat rendering ──
+function addMessage(role, text, sources=[]) {
+  const area = document.getElementById('chat-area');
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+
+  const avatar = role === 'user' ? '👤' : '🤖';
+  let sourcesHtml = '';
+  if (sources.length > 0 && role === 'assistant') {
+    const unique = [...new Map(sources.map(s => [`${s.source}:${s.page}`, s])).values()];
+    sourcesHtml = `<div class="sources"><strong>${t('sources')}:</strong><br>
+      ${unique.map(s => `<span class="source-tag">📄 ${s.source} · ${t('page')} ${s.page}</span>`).join('')}
+    </div>`;
+  }
+
+  div.innerHTML = `
+    <div class="avatar">${avatar}</div>
+    <div class="msg-bubble"><pre>${escapeHtml(text)}</pre>${sourcesHtml}</div>
+  `;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+  return div;
+}
+
+function addLoading() {
+  const area = document.getElementById('chat-area');
+  const id = 'loading-' + Date.now();
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  div.id = id;
+  div.innerHTML = `<div class="avatar">🤖</div><div class="msg-bubble"><div class="dots"><span></span><span></span><span></span></div></div>`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+  return id;
+}
+
+function removeLoading(id) {
+  document.getElementById(id)?.remove();
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Textarea auto-resize ──
+function autoResize(el) {
+  el.style.height = '44px';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
+}
+</script>
+</body>
+</html>
