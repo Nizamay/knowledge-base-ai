@@ -117,6 +117,12 @@
   .progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 6px; }
   .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .3s; }
 
+  .provider-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: border-color .2s; }
+  .provider-card:hover { border-color: var(--accent); }
+  .provider-card.active { border-color: var(--accent); background: rgba(79,142,247,.08); }
+  .badge-free { font-size:10px; background: rgba(62,207,142,.15); color: var(--green); border-radius:4px; padding: 1px 6px; font-weight:600; }
+  .badge-paid { font-size:10px; background: rgba(124,92,191,.2); color: #a78bfa; border-radius:4px; padding: 1px 6px; font-weight:600; }
+
   details summary { cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
   details summary:hover { color: var(--text); }
   pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; }
@@ -140,17 +146,40 @@
     <!-- Provider + API Key -->
     <div>
       <div class="section-title">AI Provider</div>
-      <div class="lang-selector" style="margin-bottom:8px">
-        <button class="lang-btn active" id="btn-groq" onclick="setProvider('groq')">Groq</button>
-        <button class="lang-btn" id="btn-claude" onclick="setProvider('claude')">Haiku</button>
-        <button class="lang-btn" id="btn-gemini" onclick="setProvider('gemini')">Gemini</button>
+
+      <!-- Provider cards -->
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+        <div id="card-groq" class="provider-card active" onclick="setProvider('groq')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600">Groq — Llama 3.1</span>
+            <span class="badge-free">FREE</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">14,000 req/day · fast</div>
+          <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://console.groq.com" target="_blank" style="color:var(--accent)">console.groq.com</a> → API Keys</div>
+        </div>
+
+        <div id="card-claude" class="provider-card" onclick="setProvider('claude')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600">Claude Haiku</span>
+            <span class="badge-paid">PAID</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">$0.25/1M tokens · smartest</div>
+          <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a> → API Keys</div>
+        </div>
+
+        <div id="card-gemini" class="provider-card" onclick="setProvider('gemini')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600">Gemini 2.0 Flash</span>
+            <span class="badge-free">FREE</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">1,500 req/day · web search</div>
+          <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com</a> → Get API key</div>
+        </div>
       </div>
+
       <label id="t-api-label">API Key</label>
       <input type="password" id="api-key" placeholder="gsk_..." oninput="saveApiKey()">
-      <div style="margin-top:5px;font-size:11px;color:var(--muted)" id="api-link-hint">
-        🔗 <a href="https://console.groq.com" target="_blank" style="color:var(--accent)">console.groq.com</a>
-        — бесплатно, 14 000 req/day
-      </div>
+      <div style="margin-top:5px;font-size:11px;color:var(--muted)" id="api-link-hint"></div>
     </div>
 
     <!-- Google Drive -->
@@ -313,20 +342,11 @@ let provider = localStorage.getItem('provider') || 'groq';
 function setProvider(p) {
   provider = p;
   localStorage.setItem('provider', p);
-  document.getElementById('btn-groq').classList.toggle('active', p === 'groq');
-  document.getElementById('btn-claude').classList.toggle('active', p === 'claude');
-  document.getElementById('btn-gemini').classList.toggle('active', p === 'gemini');
-  const hint = document.getElementById('api-link-hint');
-  if (p === 'groq') {
-    hint.innerHTML = '🔗 <a href="https://console.groq.com" target="_blank" style="color:var(--accent)">console.groq.com</a> — free, 14k req/day';
-    document.getElementById('api-key').placeholder = 'gsk_...';
-  } else if (p === 'claude') {
-    hint.innerHTML = '🔗 <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a> — $0.25/1M tokens';
-    document.getElementById('api-key').placeholder = 'sk-ant-...';
-  } else {
-    hint.innerHTML = '🔗 <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com</a> — free';
-    document.getElementById('api-key').placeholder = 'AIza...';
-  }
+  ['groq','claude','gemini'].forEach(id => {
+    document.getElementById('card-' + id).classList.toggle('active', id === p);
+  });
+  const placeholders = { groq: 'gsk_...', claude: 'sk-ant-...', gemini: 'AIza...' };
+  document.getElementById('api-key').placeholder = placeholders[p];
   const saved = localStorage.getItem(p + '_key');
   document.getElementById('api-key').value = saved || '';
 }
