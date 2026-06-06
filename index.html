@@ -614,7 +614,8 @@ async function callOpenAICompat(url, apiKey, model, content, maxTokens=1024, ext
     body: JSON.stringify({ model, messages: [{ role: 'user', content }], temperature: 0.3, max_tokens: maxTokens })
   });
   const data = await resp.json();
-  if (data.error) throw new Error(data.error.message);
+  console.log('[RAG] full API response:', JSON.stringify(data).slice(0, 500));
+  if (data.error) throw new Error(JSON.stringify(data.error));
   return data.choices?.[0]?.message?.content || '';
 }
 
