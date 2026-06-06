@@ -144,6 +144,15 @@
   details summary:hover { color: var(--text); }
   pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; }
 
+  /* Chat history */
+  .session-item { padding:7px 10px; border-radius:3px; border:1px solid var(--border); cursor:pointer; font-size:12px; background:var(--surface); display:flex; justify-content:space-between; align-items:center; gap:6px; transition:border-color .15s; }
+  .session-item:hover { border-color:var(--accent); }
+  .session-item.active { border-color:var(--accent); border-left:3px solid var(--accent); background:#fff5f5; }
+  .session-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .session-date { font-size:10px; color:var(--muted); font-family:var(--mono); white-space:nowrap; }
+  .session-del { background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; padding:0 2px; flex-shrink:0; }
+  .session-del:hover { color:var(--red); }
+
   /* Help panel */
   .help-step { display:flex; gap:10px; margin-bottom:14px; }
   .help-num { width:22px; height:22px; min-width:22px; background:var(--accent); color:#fff;
@@ -268,6 +277,17 @@
       </div>
       <div class="doc-list" id="doc-list"></div>
       <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono)">💾 Saved in browser — no re-download needed</div>
+    </div>
+
+    <!-- Chat History -->
+    <div>
+      <div class="section-title" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="toggleHistory()">
+        <span>CHAT HISTORY</span><span id="history-arrow">▶</span>
+      </div>
+      <div id="history-panel" style="display:none">
+        <button class="btn btn-ghost" style="width:100%;margin-bottom:6px;font-size:11px" onclick="newChat()">＋ New Chat</button>
+        <div id="session-list" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"></div>
+      </div>
     </div>
 
     <!-- Help / Setup Guide -->
@@ -542,6 +562,7 @@ function getApiKey() {
 
 // ── Init ──
 window.onload = () => {
+  currentSessionId = genId(); // start fresh session
   setProvider(provider);
   const gk = localStorage.getItem('gdrive_key');
   if (gk) document.getElementById('gdrive-api-key').value = gk;
@@ -989,6 +1010,112 @@ function confirmEnglishQuery(englishQuery) {
   });
 }
 
+// ── Chat History (IndexedDB) ──
+const CHAT_STORE = 'chats';
+
+async function getChatDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('KnowledgeBaseChats', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(CHAT_STORE, { keyPath: 'id' });
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+let currentSessionId = null;
+let currentMessages  = []; // [{role, content, sources}]
+
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+async function saveSession() {
+  if (!currentSessionId || currentMessages.length === 0) return;
+  const d = await getChatDB();
+  const title = currentMessages.find(m => m.role === 'user')?.content?.slice(0, 50) || 'New chat';
+  return new Promise(resolve => {
+    const tx = d.transaction(CHAT_STORE, 'readwrite');
+    tx.objectStore(CHAT_STORE).put({ id: currentSessionId, title, messages: currentMessages, updatedAt: Date.now() });
+    tx.oncomplete = resolve;
+  });
+}
+
+async function loadSessions() {
+  const d = await getChatDB();
+  return new Promise(resolve => {
+    const req = d.transaction(CHAT_STORE, 'readonly').objectStore(CHAT_STORE).getAll();
+    req.onsuccess = () => resolve(req.result.sort((a,b) => b.updatedAt - a.updatedAt));
+  });
+}
+
+async function deleteSession(id) {
+  const d = await getChatDB();
+  return new Promise(resolve => {
+    const tx = d.transaction(CHAT_STORE, 'readwrite');
+    tx.objectStore(CHAT_STORE).delete(id);
+    tx.oncomplete = resolve;
+  });
+}
+
+async function renderSessionList() {
+  const sessions = await loadSessions();
+  const list = document.getElementById('session-list');
+  if (sessions.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--muted);font-family:var(--mono);padding:4px">No saved chats yet</div>';
+    return;
+  }
+  list.innerHTML = sessions.map(s => {
+    const date = new Date(s.updatedAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+    const active = s.id === currentSessionId ? ' active' : '';
+    return `<div class="session-item${active}" onclick="loadSession('${s.id}')">
+      <span class="session-title" title="${s.title}">${s.title}</span>
+      <span class="session-date">${date}</span>
+      <button class="session-del" onclick="event.stopPropagation();deleteSessionUI('${s.id}')" title="Delete">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function loadSession(id) {
+  const sessions = await loadSessions();
+  const session = sessions.find(s => s.id === id);
+  if (!session) return;
+
+  currentSessionId = id;
+  currentMessages  = session.messages;
+
+  // Clear and re-render chat
+  const area = document.getElementById('chat-area');
+  area.innerHTML = '';
+  document.getElementById('welcome').style.display = 'none';
+
+  for (const msg of session.messages) {
+    addMessage(msg.role, msg.content, msg.sources || [], false);
+  }
+  renderSessionList();
+}
+
+async function deleteSessionUI(id) {
+  await deleteSession(id);
+  if (currentSessionId === id) newChat();
+  else renderSessionList();
+}
+
+function newChat() {
+  currentSessionId = genId();
+  currentMessages  = [];
+  const area = document.getElementById('chat-area');
+  area.innerHTML = '';
+  document.getElementById('welcome').style.display = '';
+  renderSessionList();
+}
+
+function toggleHistory() {
+  const p = document.getElementById('history-panel');
+  const a = document.getElementById('history-arrow');
+  const open = p.style.display === 'none';
+  p.style.display = open ? 'block' : 'none';
+  a.textContent = open ? '▼' : '▶';
+  if (open) renderSessionList();
+}
+
 // ── OpenAI-compatible call (Groq, OpenRouter, Cerebras) ──
 async function callOpenAICompat(url, apiKey, model, content, maxTokens=1024, extraHeaders={}) {
   const resp = await fetch(url, {
@@ -1151,7 +1278,7 @@ Answer based ONLY on the context above:`;
 }
 
 // ── Chat rendering ──
-function addMessage(role, text, sources=[]) {
+function addMessage(role, text, sources=[], save=true) {
   const area = document.getElementById('chat-area');
   const div = document.createElement('div');
   div.className = `msg ${role}`;
@@ -1171,6 +1298,14 @@ function addMessage(role, text, sources=[]) {
   `;
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
+
+  // Save to session history
+  if (save) {
+    if (!currentSessionId) currentSessionId = genId();
+    currentMessages.push({ role, content: text, sources });
+    saveSession().then(() => renderSessionList());
+  }
+
   return div;
 }
 
