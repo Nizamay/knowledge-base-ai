@@ -222,14 +222,24 @@
 
     <!-- Google Drive -->
     <div>
-      <div class="section-title" id="t-drive-title">Google Drive</div>
-      <label id="t-drive-label">Paste public file link</label>
-      <div class="drive-row">
-        <input type="url" id="drive-url" placeholder="https://drive.google.com/file/d/...">
-        <button class="btn btn-primary btn-sm" onclick="loadFromDrive()" id="t-drive-btn">Load</button>
+      <div class="section-title">Google Drive</div>
+
+      <label>Google API Key (for folder support)</label>
+      <input type="password" id="gdrive-api-key" placeholder="AIza..." oninput="localStorage.setItem('gdrive_key', this.value)">
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">
+        🔗 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--accent)">console.cloud.google.com</a>
+        → Enable Drive API → Create API Key
       </div>
-      <div style="margin-top:5px;font-size:11px;color:var(--muted)" id="t-drive-help">
-        File must be shared publicly (Anyone with link)
+
+      <div style="height:10px"></div>
+      <label>Paste file or folder link</label>
+      <div class="drive-row">
+        <input type="url" id="drive-url" placeholder="https://drive.google.com/drive/folders/... or /file/d/...">
+        <button class="btn btn-primary btn-sm" onclick="loadFromDrive()">Load</button>
+      </div>
+      <div id="folder-file-list" style="display:none;margin-top:8px"></div>
+      <div style="margin-top:5px;font-size:11px;color:var(--muted)">
+        Folder or file must be shared: <b>Anyone with link</b>
       </div>
     </div>
 
@@ -401,6 +411,8 @@ function getApiKey() {
 // ── Init ──
 window.onload = () => {
   setProvider(provider);
+  const gk = localStorage.getItem('gdrive_key');
+  if (gk) document.getElementById('gdrive-api-key').value = gk;
   // mobile: open sidebar by default
   if (window.innerWidth > 700) {
     document.getElementById('sidebar-content').classList.add('open');
@@ -505,10 +517,87 @@ async function handleFiles(files) {
   document.getElementById('welcome').style.display = 'none';
 }
 
+// ── Load Google Drive folder ──
+async function loadFolder(folderId, gKey) {
+  showStatus('📂 Listing folder contents...', 'info');
+  const apiUrl = `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&fields=files(id,name,mimeType,size)&key=${gKey}`;
+  const resp = await fetch(apiUrl);
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error.message);
+
+  const supported = data.files.filter(f =>
+    f.mimeType === 'application/pdf' ||
+    f.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    f.mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  );
+
+  if (supported.length === 0) {
+    showStatus('⚠️ No PDF/DOCX/PPTX files found in this folder.', 'error');
+    return;
+  }
+
+  // Show file list with checkboxes
+  const listEl = document.getElementById('folder-file-list');
+  listEl.style.display = 'block';
+  listEl.innerHTML = `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:var(--mono)">SELECT FILES TO LOAD:</div>
+    ${supported.map(f => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer">
+        <input type="checkbox" checked data-id="${f.id}" data-name="${f.name}" style="accent-color:var(--accent)">
+        <span title="${f.name}">${f.name.length > 35 ? f.name.slice(0,33)+'…' : f.name}</span>
+      </label>`).join('')}
+    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="loadSelectedFiles()">
+      Load Selected Files
+    </button>`;
+
+  // Store gKey for later
+  window._gDriveKey = gKey;
+  showStatus(`📂 Found ${supported.length} files. Select which to load.`, 'info');
+}
+
+async function loadSelectedFiles() {
+  const checkboxes = document.querySelectorAll('#folder-file-list input[type=checkbox]:checked');
+  if (checkboxes.length === 0) { showStatus('⚠️ No files selected.', 'error'); return; }
+
+  document.getElementById('folder-file-list').style.display = 'none';
+  let loaded = 0;
+  for (const cb of checkboxes) {
+    const fileId = cb.dataset.id;
+    const name   = cb.dataset.name;
+    showStatus(`⏳ Downloading: ${name}...`, 'info');
+    try {
+      const downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${window._gDriveKey}`;
+      const resp = await fetch(downloadUrl);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const buf = await resp.arrayBuffer();
+      const count = await indexDocument(buf, name);
+      loaded++;
+      showStatus(`✅ ${name} — ${count} chunks`, 'success');
+    } catch(e) {
+      showStatus(`❌ Failed: ${name} — ${e.message}`, 'error');
+    }
+  }
+  document.getElementById('welcome').style.display = 'none';
+  showStatus(`✅ Done! ${loaded} file(s) loaded.`, 'success');
+}
+
 // ── Load from Google Drive ──
 async function loadFromDrive() {
-  const url = document.getElementById('drive-url').value.trim();
+  const url    = document.getElementById('drive-url').value.trim();
+  const gKey   = document.getElementById('gdrive-api-key').value.trim()
+              || localStorage.getItem('gdrive_key') || '';
   if (!url) return;
+
+  // Detect folder link
+  const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) {
+    if (!gKey) {
+      showStatus('❌ Google API Key required to load folders. Enter it above.', 'error');
+      return;
+    }
+    try { await loadFolder(folderMatch[1], gKey); } catch(e) { showStatus(`❌ ${e.message}`, 'error'); }
+    return;
+  }
 
   // Extract file ID from various Drive URL formats
   let fileId = '';
@@ -525,6 +614,21 @@ async function loadFromDrive() {
   if (!fileId) {
     showStatus('❌ Could not extract file ID from the link. Use a standard Google Drive share link.', 'error');
     return;
+  }
+
+  // If Google API key available — use Drive API directly (more reliable)
+  if (gKey) {
+    showStatus('⏳ Downloading via Drive API...', 'info');
+    try {
+      const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${gKey}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      // Get filename
+      const metaResp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=name&key=${gKey}`);
+      const meta = await metaResp.json();
+      const buf = await resp.arrayBuffer();
+      await finishDriveLoad(buf, fileId, resp, meta.name);
+      return;
+    } catch(e) { console.warn('Drive API failed, trying proxy:', e.message); }
   }
 
   // Direct download URL (works for public files)
@@ -583,11 +687,14 @@ async function loadFromDrive() {
     2. Try downloading manually and use "Choose files" instead`, 'error');
 }
 
-async function finishDriveLoad(buf, fileId, resp) {
-  const cd = resp.headers.get('content-disposition') || '';
-  let filename = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1]
-    || `document_${fileId}.pdf`;
-  filename = decodeURIComponent(filename.replace(/[+]/g, ' ').trim());
+async function finishDriveLoad(buf, fileId, resp, forceName) {
+  let filename = forceName;
+  if (!filename) {
+    const cd = resp.headers.get('content-disposition') || '';
+    filename = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1]
+      || `document_${fileId}.pdf`;
+    filename = decodeURIComponent(filename.replace(/[+]/g, ' ').trim());
+  }
 
   const count = await indexDocument(buf, filename);
   showStatus(`✅ Loaded: ${filename} — ${count} chunks indexed`, 'success');
