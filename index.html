@@ -196,13 +196,13 @@
           <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent)">openrouter.ai/keys</a> → Create Key</div>
         </div>
 
-        <div id="card-together" class="provider-card" onclick="setProvider('together')">
+        <div id="card-mistral" class="provider-card" onclick="setProvider('mistral')">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-weight:600">Together AI — Llama 3.3 70B</span>
+            <span style="font-weight:600">Mistral — Mistral Small</span>
             <span class="badge-free">FREE</span>
           </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:3px">$1 free credit on signup</div>
-          <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://api.together.ai/settings/api-keys" target="_blank" style="color:var(--accent)">api.together.ai</a> → API Keys</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">Free tier · 1 req/sec</div>
+          <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://console.mistral.ai/api-keys" target="_blank" style="color:var(--accent)">console.mistral.ai</a> → API Keys</div>
         </div>
       </div>
 
@@ -372,10 +372,10 @@ let provider = localStorage.getItem('provider') || 'groq';
 function setProvider(p) {
   provider = p;
   localStorage.setItem('provider', p);
-  ['groq','claude','gemini','openrouter','together'].forEach(id => {
+  ['groq','claude','gemini','openrouter','mistral'].forEach(id => {
     document.getElementById('card-' + id).classList.toggle('active', id === p);
   });
-  const placeholders = { groq: 'gsk_...', claude: 'sk-ant-...', gemini: 'AIza...', openrouter: 'sk-or-...', together: 'together-...' };
+  const placeholders = { groq: 'gsk_...', claude: 'sk-ant-...', gemini: 'AIza...', openrouter: 'sk-or-...', mistral: 'your-mistral-key' };
   document.getElementById('api-key').placeholder = placeholders[p] || '...';
   const saved = localStorage.getItem(p + '_key');
   document.getElementById('api-key').value = saved || '';
@@ -622,7 +622,7 @@ async function callOpenAICompat(url, apiKey, model, content, maxTokens=1024, ext
 const PROVIDER_CONFIG = {
   groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',           model: 'llama-3.1-8b-instant' },
   openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',             model: 'meta-llama/llama-3.3-70b-instruct:free', headers: { 'HTTP-Referer': 'https://nizamay.github.io/knowledge-base-ai/' } },
-  together:   { url: 'https://api.together.xyz/v1/chat/completions',               model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free' },
+  mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',                  model: 'mistral-small-latest' },
 };
 
 // ── Translate query to English ──
