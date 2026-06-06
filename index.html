@@ -143,6 +143,14 @@
   details summary { cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
   details summary:hover { color: var(--text); }
   pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+
+  /* Help panel */
+  .help-step { display:flex; gap:10px; margin-bottom:14px; }
+  .help-num { width:22px; height:22px; min-width:22px; background:var(--accent); color:#fff;
+    border-radius:3px; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:12px; font-family:var(--mono); margin-top:1px; }
+  #help-panel a { color:var(--accent); }
+  #help-panel strong { color:var(--text); }
 </style>
 </head>
 <body>
@@ -257,6 +265,71 @@
       <div class="section-title" id="t-docs-title">Indexed documents</div>
       <div class="doc-list" id="doc-list"></div>
     </div>
+
+    <!-- Help / Setup Guide -->
+    <div>
+      <div class="section-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleHelp()">
+        <span>SETUP GUIDE</span><span id="help-arrow">▶</span>
+      </div>
+      <div id="help-panel" style="display:none;font-size:12px;line-height:1.7;color:var(--muted)">
+
+        <div class="help-step">
+          <div class="help-num">1</div>
+          <div>
+            <strong>Choose AI Provider &amp; Get API Key</strong><br>
+            Select a provider from the list above. All have free tiers:<br>
+            • <b>Groq</b> — fastest, 14k req/day.
+            Go to <a href="https://console.groq.com" target="_blank">console.groq.com</a> → Sign in with Google → API Keys → Create.<br>
+            • <b>OpenRouter</b> — smartest free models (Llama 3.3 70B).
+            Go to <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> → Create Key.<br>
+            • <b>Gemini</b> — free, supports web search.
+            Go to <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a> → Get API Key.<br>
+            • <b>Claude Haiku</b> — smartest overall, paid ($0.25/1M tokens).
+            Go to <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys.
+          </div>
+        </div>
+
+        <div class="help-step">
+          <div class="help-num">2</div>
+          <div>
+            <strong>Load Documents</strong><br>
+            Two options:<br>
+            <b>A) Upload locally</b> — click "Choose files" and select PDF, DOCX, or PPTX from your computer. Files stay on your device.<br>
+            <b>B) Google Drive</b> — paste a public file or folder link.
+            <em>File must be shared: right-click → Share → Anyone with the link → Viewer.</em><br>
+            For folders: you also need a <b>Google API Key</b>
+            (<a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com</a>
+            → Enable Drive API → Create API Key).
+          </div>
+        </div>
+
+        <div class="help-step">
+          <div class="help-num">3</div>
+          <div>
+            <strong>Ask Questions</strong><br>
+            Type your question in the chat box. The app will:<br>
+            1. Translate non-English queries to English for better search<br>
+            2. Find the most relevant passages in your documents<br>
+            3. Send those passages to the AI to generate an answer<br>
+            4. Show the source document and page number<br><br>
+            ⚡ <em>Tip: Use technical terms exactly as they appear in the document (e.g. "Noise Logging Tool" not "noise meter").</em>
+          </div>
+        </div>
+
+        <div class="help-step">
+          <div class="help-num">4</div>
+          <div>
+            <strong>Security Notes</strong><br>
+            • Your API keys are saved only in <em>this browser</em> (localStorage). Never shared.<br>
+            • Documents are parsed locally — they do NOT leave your device.<br>
+            • Only small text excerpts (chunks) are sent to the AI provider to generate answers.<br>
+            • For sensitive/confidential documents, use a private server deployment instead.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1052,6 +1125,14 @@ function renderText(s) {
 function autoResize(el) {
   el.style.height = '44px';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function toggleHelp() {
+  const p = document.getElementById('help-panel');
+  const a = document.getElementById('help-arrow');
+  const open = p.style.display === 'none';
+  p.style.display = open ? 'block' : 'none';
+  a.textContent = open ? '▼' : '▶';
 }
 
 function handleKey(e) {
