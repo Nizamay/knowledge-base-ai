@@ -186,6 +186,24 @@
           <div style="font-size:11px;color:var(--muted);margin-top:3px">1,500 req/day · web search</div>
           <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com</a> → Get API key</div>
         </div>
+
+        <div id="card-openrouter" class="provider-card" onclick="setProvider('openrouter')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600">OpenRouter — Llama 3.3 70B</span>
+            <span class="badge-free">FREE</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">Many free models · smartest free</div>
+          <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent)">openrouter.ai/keys</a> → Create Key</div>
+        </div>
+
+        <div id="card-cerebras" class="provider-card" onclick="setProvider('cerebras')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600">Cerebras — Llama 3.3 70B</span>
+            <span class="badge-free">FREE</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">60k TPM · ultra fast</div>
+          <div style="font-size:11px;margin-top:4px">🔗 Get key: <a href="https://cloud.cerebras.ai" target="_blank" style="color:var(--accent)">cloud.cerebras.ai</a> → API Keys</div>
+        </div>
       </div>
 
       <label id="t-api-label">API Key</label>
@@ -354,11 +372,11 @@ let provider = localStorage.getItem('provider') || 'groq';
 function setProvider(p) {
   provider = p;
   localStorage.setItem('provider', p);
-  ['groq','claude','gemini'].forEach(id => {
+  ['groq','claude','gemini','openrouter','cerebras'].forEach(id => {
     document.getElementById('card-' + id).classList.toggle('active', id === p);
   });
-  const placeholders = { groq: 'gsk_...', claude: 'sk-ant-...', gemini: 'AIza...' };
-  document.getElementById('api-key').placeholder = placeholders[p];
+  const placeholders = { groq: 'gsk_...', claude: 'sk-ant-...', gemini: 'AIza...', openrouter: 'sk-or-...', cerebras: 'csk-...' };
+  document.getElementById('api-key').placeholder = placeholders[p] || '...';
   const saved = localStorage.getItem(p + '_key');
   document.getElementById('api-key').value = saved || '';
 }
@@ -588,6 +606,24 @@ function confirmEnglishQuery(englishQuery) {
   });
 }
 
+// ── OpenAI-compatible call (Groq, OpenRouter, Cerebras) ──
+async function callOpenAICompat(url, apiKey, model, content, maxTokens=1024, extraHeaders={}) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...extraHeaders },
+    body: JSON.stringify({ model, messages: [{ role: 'user', content }], temperature: 0.3, max_tokens: maxTokens })
+  });
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.choices?.[0]?.message?.content || '';
+}
+
+const PROVIDER_CONFIG = {
+  groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',           model: 'llama-3.1-8b-instant' },
+  openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',             model: 'meta-llama/llama-3.3-70b-instruct:free', headers: { 'HTTP-Referer': 'https://nizamay.github.io/knowledge-base-ai/' } },
+  cerebras:   { url: 'https://api.cerebras.ai/v1/chat/completions',               model: 'llama-3.3-70b' },
+};
+
 // ── Translate query to English ──
 async function translateToEnglish(query, apiKey) {
   // If already English, skip translation call
@@ -601,14 +637,9 @@ Return ONLY the translated text, nothing else.
 Question: ${query}`;
 
   try {
-    if (provider === 'groq') {
-      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], temperature: 0, max_tokens: 200 })
-      });
-      const data = await resp.json();
-      return data.choices?.[0]?.message?.content?.trim() || query;
+    if (PROVIDER_CONFIG[provider]) {
+      const cfg = PROVIDER_CONFIG[provider];
+      return await callOpenAICompat(cfg.url, apiKey, cfg.model, prompt, 200, cfg.headers||{});
     } else if (provider === 'claude') {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -697,7 +728,11 @@ Answer based ONLY on the context above:`;
   try {
     let answer = '';
 
-    if (provider === 'claude') {
+    if (PROVIDER_CONFIG[provider]) {
+      const cfg = PROVIDER_CONFIG[provider];
+      answer = await callOpenAICompat(cfg.url, apiKey, cfg.model, prompt, 1024, cfg.headers||{});
+
+    } else if (provider === 'claude') {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
@@ -707,26 +742,9 @@ Answer based ONLY on the context above:`;
       if (data.error) throw new Error(data.error.message);
       answer = data.content?.[0]?.text || 'No response.';
 
-    } else if (provider === 'groq') {
-      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.3,
-          max_tokens: 1024
-        })
-      });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error.message);
-      answer = data.choices?.[0]?.message?.content || 'No response.';
-
     } else {
-      const body = {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 2048 }
-      };
+      // Gemini
+      const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 1024 } };
       if (useWeb) body.tools = [{ google_search_retrieval: {} }];
       const resp = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
