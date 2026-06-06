@@ -40,6 +40,7 @@
     .sidebar-toggle { display: flex !important; }
     .sidebar-content { display: none; }
     .sidebar-content.open { display: block; }
+    .hide-mobile { display: none !important; }
   }
 
   /* Brand */
@@ -87,8 +88,9 @@
   .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
 
   /* Chat */
-  .chat-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
-  .welcome { text-align: center; margin: auto; max-width: 420px; padding: 40px 20px; }
+  .chat-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); min-height: 0; }
+  .chat-area:empty { flex: 0; padding: 0; }
+  .welcome { text-align: center; max-width: 420px; padding: 40px 20px; margin: auto; flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--bg); }
   .welcome h1 { font-size: 22px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
   .welcome p { color: var(--muted); font-size: 13px; line-height: 1.6; font-family: var(--mono); }
 
@@ -391,14 +393,14 @@
 
 <!-- MAIN -->
 <div class="main">
-  <div class="chat-area" id="chat-area">
-    <div class="welcome" id="welcome">
-      <div style="width:60px;height:60px;background:var(--accent);border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:var(--ui);font-weight:700;font-size:34px;color:white;margin:0 auto 16px">H</div>
-      <h1 id="t-welcome-title">Knowledge Base AI</h1>
-      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:2px;text-transform:uppercase;margin:4px 0 14px">Halliburton · Document Intelligence</div>
-      <p id="t-welcome-sub">Upload your documents or load from Google Drive, then ask questions. Answers are grounded strictly in your documents.</p>
-    </div>
+  <div class="chat-area" id="chat-area"></div>
+  <div class="welcome" id="welcome">
+    <div style="width:60px;height:60px;background:var(--accent);border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:var(--ui);font-weight:700;font-size:34px;color:white;margin:0 auto 16px">H</div>
+    <h1 id="t-welcome-title">Knowledge Base AI</h1>
+    <div style="font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:2px;text-transform:uppercase;margin:4px 0 14px">Halliburton · Document Intelligence</div>
+    <p id="t-welcome-sub">Upload your documents or load from Google Drive, then ask questions. Answers are grounded strictly in your documents.</p>
   </div>
+  <div id="chat-placeholder" style="display:none"></div>
 
   <div class="input-area">
     <div id="status-bar" style="margin-bottom:8px;display:none"></div>
@@ -601,7 +603,7 @@ function getApiKey() {
 }
 
 // ── Init ──
-window.onload = () => {
+window.onload = async () => {
   currentSessionId = genId(); // start fresh session
   setProvider(provider);
   const cid = localStorage.getItem('gdrive_client_id');
@@ -622,10 +624,8 @@ window.onload = () => {
       setTimeout(hideStatus, 3000);
     }
   } catch(e) { console.warn('IndexedDB load failed:', e); }
-  // mobile: open sidebar by default
-  if (window.innerWidth > 700) {
-    document.getElementById('sidebar-content').classList.add('open');
-  }
+  // mobile: sidebar starts closed (CSS default), desktop: always visible via flex
+  // .open class is only needed on mobile (<= 700px), do nothing on desktop
 };
 
 // ── Sidebar toggle (mobile) ──
