@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -237,26 +238,44 @@
       <div style="margin-top:5px;font-size:11px;color:var(--muted)" id="api-link-hint"></div>
     </div>
 
-    <!-- Google Drive -->
+    <!-- Google Drive OAuth -->
     <div>
       <div class="section-title">Google Drive</div>
 
-      <label>Google API Key (for folder support)</label>
-      <input type="password" id="gdrive-api-key" placeholder="AIza..." oninput="localStorage.setItem('gdrive_key', this.value)">
+      <!-- Step 1: Client ID -->
+      <label>OAuth Client ID</label>
+      <input type="text" id="gdrive-client-id" placeholder="xxxx.apps.googleusercontent.com"
+        oninput="localStorage.setItem('gdrive_client_id', this.value)">
       <div style="font-size:11px;color:var(--muted);margin-top:3px">
         🔗 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--accent)">console.cloud.google.com</a>
-        → Enable Drive API → Create API Key
+        → OAuth 2.0 Client ID
       </div>
 
-      <div style="height:10px"></div>
-      <label>Paste file or folder link</label>
-      <div class="drive-row">
-        <input type="url" id="drive-url" placeholder="https://drive.google.com/drive/folders/... or /file/d/...">
-        <button class="btn btn-primary btn-sm" onclick="loadFromDrive()">Load</button>
+      <!-- Sign in button -->
+      <div style="height:8px"></div>
+      <button class="btn btn-primary" style="width:100%" id="gdrive-signin-btn" onclick="driveSignIn()">
+        🔐 Sign in with Google
+      </button>
+
+      <!-- Signed in state -->
+      <div id="gdrive-user" style="display:none;font-size:12px;margin-top:6px;padding:6px 8px;background:var(--bg3);border-radius:3px;border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span id="gdrive-user-email" style="color:var(--text);font-family:var(--mono)"></span>
+          <button onclick="driveSignOut()" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:var(--mono)">Sign out</button>
+        </div>
       </div>
-      <div id="folder-file-list" style="display:none;margin-top:8px"></div>
-      <div style="margin-top:5px;font-size:11px;color:var(--muted)">
-        Folder or file must be shared: <b>Anyone with link</b>
+
+      <!-- Browse Drive -->
+      <div id="gdrive-browse" style="display:none;margin-top:8px">
+        <label>Paste folder or file link</label>
+        <div class="drive-row">
+          <input type="url" id="drive-url" placeholder="https://drive.google.com/drive/folders/...">
+          <button class="btn btn-primary btn-sm" onclick="loadFromDrive()">Load</button>
+        </div>
+        <div id="folder-file-list" style="display:none;margin-top:8px"></div>
+        <div style="margin-top:5px;font-size:11px;color:var(--muted)">
+          Works with <b>private</b> files — no public sharing needed
+        </div>
       </div>
     </div>
 
@@ -318,12 +337,20 @@
           <div>
             <strong>Load Documents</strong><br>
             Two options:<br>
-            <b>A) Upload locally</b> — click "Choose files" and select PDF, DOCX, or PPTX from your computer. Files stay on your device.<br>
-            <b>B) Google Drive</b> — paste a public file or folder link.
-            <em>File must be shared: right-click → Share → Anyone with the link → Viewer.</em><br>
-            For folders: you also need a <b>Google API Key</b>
-            (<a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com</a>
-            → Enable Drive API → Create API Key).
+            <b>A) Upload locally</b> — click "Choose files" or drag &amp; drop PDF, DOCX, PPTX. Files stay on your device.<br>
+            <b>B) Google Drive (private files)</b> — sign in with your Google account. Files do NOT need to be shared publicly.<br><br>
+            <b>One-time Google OAuth setup:</b><br>
+            1. Go to <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent)">console.cloud.google.com</a><br>
+            2. Create a project (or select existing)<br>
+            3. <b>APIs &amp; Services → Enable APIs</b> → search <em>Google Drive API</em> → Enable<br>
+            4. <b>APIs &amp; Services → Credentials → Create Credentials → OAuth 2.0 Client ID</b><br>
+            5. Application type: <b>Web application</b><br>
+            6. Under <em>Authorized JavaScript origins</em> add:<br>
+            &nbsp;&nbsp;<code style="background:var(--bg3);padding:1px 4px;border-radius:2px">https://nizamay.github.io</code><br>
+            7. Click Create → copy the <b>Client ID</b><br>
+            8. Paste it into the "OAuth Client ID" field above → click "Sign in with Google"<br><br>
+            <b>OAuth Consent Screen</b> (required once):<br>
+            APIs &amp; Services → OAuth consent screen → External → fill App name → add your Gmail to Test users.
           </div>
         </div>
 
@@ -564,8 +591,9 @@ function getApiKey() {
 window.onload = () => {
   currentSessionId = genId(); // start fresh session
   setProvider(provider);
-  const gk = localStorage.getItem('gdrive_key');
-  if (gk) document.getElementById('gdrive-api-key').value = gk;
+  const cid = localStorage.getItem('gdrive_client_id');
+  if (cid) document.getElementById('gdrive-client-id').value = cid;
+  driveRestoreToken();
 
   // Load cached documents from IndexedDB
   try {
@@ -689,11 +717,11 @@ async function handleFiles(files) {
   document.getElementById('welcome').style.display = 'none';
 }
 
-// ── Load Google Drive folder ──
-async function loadFolder(folderId, gKey) {
+// ── Load Google Drive folder (OAuth) ──
+async function loadFolder(folderId) {
   showStatus('📂 Listing folder contents...', 'info');
-  const apiUrl = `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&fields=files(id,name,mimeType,size)&key=${gKey}`;
-  const resp = await fetch(apiUrl);
+  const apiUrl = `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&fields=files(id,name,mimeType,size)`;
+  const resp = await fetch(apiUrl, { headers: { Authorization: `Bearer ${driveToken}` } });
   const data = await resp.json();
   if (data.error) throw new Error(data.error.message);
 
@@ -722,8 +750,6 @@ async function loadFolder(folderId, gKey) {
       Load Selected Files
     </button>`;
 
-  // Store gKey for later
-  window._gDriveKey = gKey;
   showStatus(`📂 Found ${supported.length} files. Select which to load.`, 'info');
 }
 
@@ -738,8 +764,10 @@ async function loadSelectedFiles() {
     const name   = cb.dataset.name;
     showStatus(`⏳ Downloading: ${name}...`, 'info');
     try {
-      const downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${window._gDriveKey}`;
-      const resp = await fetch(downloadUrl);
+      const resp = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        { headers: { Authorization: `Bearer ${driveToken}` } }
+      );
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const buf = await resp.arrayBuffer();
       const count = await indexDocument(buf, name);
@@ -753,110 +781,116 @@ async function loadSelectedFiles() {
   showStatus(`✅ Done! ${loaded} file(s) loaded.`, 'success');
 }
 
-// ── Load from Google Drive ──
+// ── Google OAuth / Drive ──
+let driveToken = null;   // current access token
+let driveTokenClient = null;
+
+function driveRestoreToken() {
+  // Tokens aren't persisted (short-lived) — nothing to restore
+  // Just restore client ID field
+}
+
+function driveSignIn() {
+  const clientId = document.getElementById('gdrive-client-id').value.trim()
+                || localStorage.getItem('gdrive_client_id') || '';
+  if (!clientId) {
+    showStatus('❌ Enter your OAuth Client ID first.', 'error');
+    return;
+  }
+
+  if (typeof google === 'undefined' || !google.accounts) {
+    showStatus('❌ Google Identity Services not loaded. Check your internet connection.', 'error');
+    return;
+  }
+
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/drive.readonly email profile',
+    callback: async (tokenResponse) => {
+      if (tokenResponse.error) {
+        showStatus(`❌ Google sign-in error: ${tokenResponse.error}`, 'error');
+        return;
+      }
+      driveToken = tokenResponse.access_token;
+
+      // Get user info
+      try {
+        const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${driveToken}` }
+        });
+        const info = await r.json();
+        document.getElementById('gdrive-user-email').textContent = info.email || 'Signed in';
+      } catch { document.getElementById('gdrive-user-email').textContent = 'Signed in ✓'; }
+
+      document.getElementById('gdrive-signin-btn').style.display = 'none';
+      document.getElementById('gdrive-user').style.display = 'block';
+      document.getElementById('gdrive-browse').style.display = 'block';
+      showStatus('✅ Signed in to Google Drive.', 'success');
+    }
+  });
+
+  driveTokenClient.requestAccessToken();
+}
+
+function driveSignOut() {
+  if (driveToken && typeof google !== 'undefined') {
+    google.accounts.oauth2.revoke(driveToken);
+  }
+  driveToken = null;
+  document.getElementById('gdrive-signin-btn').style.display = '';
+  document.getElementById('gdrive-user').style.display = 'none';
+  document.getElementById('gdrive-browse').style.display = 'none';
+}
+
+// ── Load from Google Drive (OAuth) ──
 async function loadFromDrive() {
-  const url    = document.getElementById('drive-url').value.trim();
-  const gKey   = document.getElementById('gdrive-api-key').value.trim()
-              || localStorage.getItem('gdrive_key') || '';
+  const url = document.getElementById('drive-url').value.trim();
   if (!url) return;
+
+  if (!driveToken) {
+    showStatus('❌ Please sign in to Google Drive first.', 'error');
+    return;
+  }
 
   // Detect folder link
   const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
   if (folderMatch) {
-    if (!gKey) {
-      showStatus('❌ Google API Key required to load folders. Enter it above.', 'error');
-      return;
-    }
-    try { await loadFolder(folderMatch[1], gKey); } catch(e) { showStatus(`❌ ${e.message}`, 'error'); }
+    try { await loadFolder(folderMatch[1]); } catch(e) { showStatus(`❌ ${e.message}`, 'error'); }
     return;
   }
 
-  // Extract file ID from various Drive URL formats
+  // Extract file ID
   let fileId = '';
-  const patterns = [
-    /\/d\/([a-zA-Z0-9_-]+)/,
-    /id=([a-zA-Z0-9_-]+)/,
-    /\/file\/d\/([a-zA-Z0-9_-]+)/,
-  ];
-  for (const p of patterns) {
+  for (const p of [/\/d\/([a-zA-Z0-9_-]+)/, /id=([a-zA-Z0-9_-]+)/, /\/file\/d\/([a-zA-Z0-9_-]+)/]) {
     const m = url.match(p);
     if (m) { fileId = m[1]; break; }
   }
-
   if (!fileId) {
-    showStatus('❌ Could not extract file ID from the link. Use a standard Google Drive share link.', 'error');
+    showStatus('❌ Could not extract file ID from the link.', 'error');
     return;
   }
 
-  // If Google API key available — use Drive API directly (more reliable)
-  if (gKey) {
-    showStatus('⏳ Downloading via Drive API...', 'info');
-    try {
-      const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${gKey}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      // Get filename
-      const metaResp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=name&key=${gKey}`);
-      const meta = await metaResp.json();
-      const buf = await resp.arrayBuffer();
-      await finishDriveLoad(buf, fileId, resp, meta.name);
-      return;
-    } catch(e) { console.warn('Drive API failed, trying proxy:', e.message); }
+  showStatus('⏳ Downloading from Google Drive...', 'info');
+  try {
+    // Get metadata (filename)
+    const metaResp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=name,mimeType`,
+      { headers: { Authorization: `Bearer ${driveToken}` } }
+    );
+    if (!metaResp.ok) throw new Error(`Metadata error: HTTP ${metaResp.status}`);
+    const meta = await metaResp.json();
+
+    // Download file content
+    const dlResp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { Authorization: `Bearer ${driveToken}` } }
+    );
+    if (!dlResp.ok) throw new Error(`Download error: HTTP ${dlResp.status}`);
+    const buf = await dlResp.arrayBuffer();
+    await finishDriveLoad(buf, fileId, dlResp, meta.name);
+  } catch(e) {
+    showStatus(`❌ ${e.message}`, 'error');
   }
-
-  // Direct download URL (works for public files)
-  const downloadUrl = `https://drive.google.com/uc?export=download&confirm=t&id=${fileId}`;
-
-  // CORS proxies to try in order
-  const proxies = [
-    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    u => `https://cors-anywhere.herokuapp.com/${u}`,
-  ];
-
-  showStatus('⏳ Connecting to Google Drive...', 'info');
-
-  for (let i = 0; i < proxies.length; i++) {
-    const proxyUrl = proxies[i](downloadUrl);
-    showStatus(`⏳ Downloading via proxy ${i + 1}/${proxies.length}...`, 'info');
-    try {
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(30000) });
-      if (!resp.ok) { console.warn(`Proxy ${i+1} failed: HTTP ${resp.status}`); continue; }
-
-      const contentType = resp.headers.get('content-type') || '';
-
-      // Google Drive returns HTML for large files (virus scan warning) — detect this
-      if (contentType.includes('text/html')) {
-        // Try to extract confirm token from the HTML and retry
-        const text = await resp.text();
-        if (text.includes('Google Drive') || text.includes('virus scan')) {
-          const tokenMatch = text.match(/confirm=([0-9A-Za-z_-]+)/);
-          if (tokenMatch) {
-            const confirmUrl = `https://drive.google.com/uc?export=download&confirm=${tokenMatch[1]}&id=${fileId}`;
-            const resp2 = await fetch(proxies[i](confirmUrl), { signal: AbortSignal.timeout(30000) });
-            if (resp2.ok) {
-              const buf = await resp2.arrayBuffer();
-              await finishDriveLoad(buf, fileId, resp2);
-              return;
-            }
-          }
-          console.warn(`Proxy ${i+1}: Got HTML (virus scan page), no confirm token`);
-          continue;
-        }
-      }
-
-      const buf = await resp.arrayBuffer();
-      await finishDriveLoad(buf, fileId, resp);
-      return;
-
-    } catch(e) {
-      console.warn(`Proxy ${i+1} error:`, e.message);
-    }
-  }
-
-  // All proxies failed
-  showStatus(`❌ Could not load file. Check:<br>
-    1. File is shared: <b>Anyone with the link → Viewer</b><br>
-    2. Try downloading manually and use "Choose files" instead`, 'error');
 }
 
 async function finishDriveLoad(buf, fileId, resp, forceName) {
