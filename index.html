@@ -553,36 +553,89 @@ function removeDoc(name) {
   renderDocList();
 }
 
-// ── Keyword retrieval with partial matching ──
-function retrieve(query, topK=4) {
-  const qLower = query.toLowerCase();
-  // Split query into meaningful words (length > 2), also keep the full query
-  const qWords = qLower.split(/\s+/).filter(w => w.length > 2);
+// ── Stop words (ignored in search) ──
+const STOP_WORDS = new Set(['the','a','an','is','are','was','were','be','been','being',
+  'have','has','had','do','does','did','will','would','could','should','may','might',
+  'of','in','on','at','to','for','with','by','from','about','into','through','during',
+  'what','which','who','when','where','how','why','this','that','these','those',
+  'and','or','but','not','can','tell','me','us','give','please','show','explain']);
 
-  const scored = chunks.map(c => {
-    const cLower = c.text.toLowerCase();
-    let score = 0;
+// ── Extract meaningful terms from query ──
+function extractTerms(query) {
+  const words = query.toLowerCase()
+    .replace(/[^\w\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
 
-    // Exact phrase match — strongest signal
-    if (cLower.includes(qLower)) score += 20;
+  // Also add bigrams (two-word phrases) for technical terms
+  const bigrams = [];
+  for (let i = 0; i < words.length - 1; i++) {
+    bigrams.push(words[i] + ' ' + words[i+1]);
+  }
+  return { words, bigrams, full: query.toLowerCase() };
+}
 
-    // Word-level matches
-    for (const w of qWords) {
-      // Exact word boundary match
-      const exactCount = (cLower.match(new RegExp(`\\b${w}\\b`, 'g')) || []).length;
-      score += exactCount * 3;
-      // Substring match (catches morphology: "шумомер" → "шумомера")
-      if (exactCount === 0 && cLower.includes(w)) score += 1;
-    }
+// ── Score a single chunk against query terms ──
+function scoreChunk(text, terms) {
+  const t = text.toLowerCase();
+  let score = 0;
 
-    return { ...c, score };
-  });
+  // Full phrase match — highest weight
+  if (t.includes(terms.full)) score += 30;
 
-  const results = scored.sort((a, b) => b.score - a.score).slice(0, topK).filter(c => c.score > 0);
+  // Bigram matches (e.g. "cement bond", "noise logging")
+  for (const bg of terms.bigrams) {
+    if (t.includes(bg)) score += 10;
+  }
 
-  // Fallback: if nothing matched, return top chunks by position (beginning of doc often has overview)
-  if (results.length === 0) return [];
-  return results;
+  // Individual word matches
+  for (const w of terms.words) {
+    // Exact word boundary
+    const exact = (t.match(new RegExp(`\\b${w}\\b`, 'g')) || []).length;
+    score += exact * 4;
+    // Substring (catches "logging" inside "micrologging")
+    if (exact === 0 && t.includes(w)) score += 1;
+  }
+
+  // Bonus: more unique terms matched = better coverage
+  const termsCovered = terms.words.filter(w => t.includes(w)).length;
+  score += termsCovered * 2;
+
+  return score;
+}
+
+// ── Retrieve top chunks + adjacent context window ──
+function retrieve(query, topK=5) {
+  const terms = extractTerms(query);
+  if (terms.words.length === 0) return chunks.slice(0, topK);
+
+  // Score all chunks
+  const scored = chunks.map((c, idx) => ({ ...c, idx, score: scoreChunk(c.text, terms) }));
+
+  // Get top matches
+  const top = scored
+    .filter(c => c.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+
+  if (top.length === 0) return [];
+
+  // Expand: include neighbouring chunks (±1) for context continuity
+  const idxSet = new Set();
+  for (const c of top) {
+    if (c.idx > 0) idxSet.add(c.idx - 1);
+    idxSet.add(c.idx);
+    if (c.idx < chunks.length - 1) idxSet.add(c.idx + 1);
+  }
+
+  // Collect, sort by original position, deduplicate
+  const expanded = [...idxSet]
+    .sort((a, b) => a - b)
+    .map(i => chunks[i])
+    .filter(Boolean);
+
+  // Cap total to avoid token limits (~8 chunks max)
+  return expanded.slice(0, 8);
 }
 
 // ── Confirm/edit English query ──
