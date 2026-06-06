@@ -755,8 +755,9 @@ Answer based ONLY on the context above:`;
       answer = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response.';
     }
 
+    console.log('[RAG] answer:', answer);
     removeLoading(loadId);
-    addMessage('assistant', answer, relevant);
+    addMessage('assistant', answer || '(empty response from API)', relevant);
   } catch(e) {
     removeLoading(loadId);
     addMessage('assistant', `❌ Error: ${e.message}`);
@@ -782,7 +783,7 @@ function addMessage(role, text, sources=[]) {
 
   div.innerHTML = `
     <div class="avatar">${avatar}</div>
-    <div class="msg-bubble"><pre>${escapeHtml(text)}</pre>${sourcesHtml}</div>
+    <div class="msg-bubble"><div class="msg-text">${renderText(text)}</div>${sourcesHtml}</div>
   `;
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
@@ -807,6 +808,21 @@ function removeLoading(id) {
 
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderText(s) {
+  if (!s || !s.trim()) return '<em style="color:var(--muted)">No response text received.</em>';
+  return escapeHtml(s)
+    // bold **text**
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // bullet points
+    .replace(/^[-•]\s+(.+)/gm, '<li>$1</li>')
+    // numbered lists
+    .replace(/^\d+\.\s+(.+)/gm, '<li>$1</li>')
+    // wrap consecutive <li> in <ul>
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul style="padding-left:18px;margin:6px 0">${m}</ul>`)
+    // newlines → <br>
+    .replace(/\n/g, '<br>');
 }
 
 // ── Textarea auto-resize ──
