@@ -622,7 +622,7 @@ async function callOpenAICompat(url, apiKey, model, content, maxTokens=1024, ext
 const PROVIDER_CONFIG = {
   groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',           model: 'llama-3.1-8b-instant' },
   openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',             model: 'meta-llama/llama-3.3-70b-instruct:free', headers: { 'HTTP-Referer': 'https://nizamay.github.io/knowledge-base-ai/' } },
-  cerebras:   { url: 'https://api.cerebras.ai/v1/chat/completions',               model: 'llama3.3-70b' },
+  cerebras:   { url: 'https://api.cerebras.ai/v1/chat/completions',               model: 'llama3.1-70b' },
 };
 
 // ── Translate query to English ──
