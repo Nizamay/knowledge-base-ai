@@ -262,8 +262,12 @@
 
     <!-- Doc list -->
     <div id="doc-section" style="display:none">
-      <div class="section-title" id="t-docs-title">Indexed documents</div>
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>CACHED DOCUMENTS</span>
+        <button onclick="clearAllDocs()" style="background:none;border:none;color:var(--muted);font-size:10px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:1px" title="Clear all">✕ Clear all</button>
+      </div>
       <div class="doc-list" id="doc-list"></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono)">💾 Saved in browser — no re-download needed</div>
     </div>
 
     <!-- Help / Setup Guide -->
@@ -363,6 +367,61 @@
 <script>
 // ── PDF.js worker ──
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── IndexedDB (persistent storage) ──
+const DB_NAME = 'KnowledgeBaseAI', DB_VER = 1, STORE = 'documents';
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (db) return resolve(db);
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => {
+      e.target.result.createObjectStore(STORE, { keyPath: 'name' });
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function dbSave(name, docChunks) {
+  const d = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put({ name, chunks: docChunks, savedAt: Date.now() });
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+async function dbLoadAll() {
+  const d = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = d.transaction(STORE, 'readonly').objectStore(STORE).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function dbDelete(name) {
+  const d = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(name);
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+async function dbClear() {
+  const d = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).clear();
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
 
 // ── State ──
 let chunks = []; // [{text, source, page}]
@@ -486,6 +545,21 @@ window.onload = () => {
   setProvider(provider);
   const gk = localStorage.getItem('gdrive_key');
   if (gk) document.getElementById('gdrive-api-key').value = gk;
+
+  // Load cached documents from IndexedDB
+  try {
+    const saved = await dbLoadAll();
+    if (saved.length > 0) {
+      for (const rec of saved) {
+        chunks.push(...rec.chunks);
+        docs[rec.name] = rec.chunks.length;
+      }
+      renderDocList();
+      document.getElementById('welcome').style.display = 'none';
+      showStatus(`💾 Loaded ${saved.length} cached document(s) from storage.`, 'success');
+      setTimeout(hideStatus, 3000);
+    }
+  } catch(e) { console.warn('IndexedDB load failed:', e); }
   // mobile: open sidebar by default
   if (window.innerWidth > 700) {
     document.getElementById('sidebar-content').classList.add('open');
@@ -577,6 +651,10 @@ async function indexDocument(arrayBuffer, filename) {
   chunks.push(...newChunks);
   docs[filename] = newChunks.length;
   renderDocList();
+
+  // Save to IndexedDB for persistence
+  try { await dbSave(filename, newChunks); } catch(e) { console.warn('IndexedDB save failed:', e); }
+
   return newChunks.length;
 }
 
@@ -792,7 +870,17 @@ function renderDocList() {
 function removeDoc(name) {
   chunks = chunks.filter(c => c.source !== name);
   delete docs[name];
+  dbDelete(name);
   renderDocList();
+}
+
+async function clearAllDocs() {
+  if (!confirm('Clear all cached documents?')) return;
+  chunks = [];
+  docs = {};
+  await dbClear();
+  renderDocList();
+  document.getElementById('welcome').style.display = '';
 }
 
 // ── Stop words (ignored in search) ──
