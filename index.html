@@ -510,36 +510,89 @@ async function loadFromDrive() {
   const url = document.getElementById('drive-url').value.trim();
   if (!url) return;
 
-  // Extract file ID
+  // Extract file ID from various Drive URL formats
   let fileId = '';
-  const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  if (m) fileId = m[1];
-  else if (url.includes('id=')) fileId = new URL(url).searchParams.get('id');
-
-  if (!fileId) { showStatus(t('err-drive'), 'error'); return; }
-
-  // Try direct download via CORS proxy or Drive export
-  const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(downloadUrl)}`;
-
-  showStatus(t('loading'), 'info');
-  try {
-    const resp = await fetch(proxyUrl);
-    if (!resp.ok) throw new Error('fetch failed');
-    const buf = await resp.arrayBuffer();
-
-    // Guess filename from Content-Disposition or URL
-    const cd = resp.headers.get('content-disposition') || '';
-    let filename = cd.match(/filename\*?=["']?([^"';\n]+)/)?.[1] || `drive_${fileId}.pdf`;
-    filename = decodeURIComponent(filename.trim());
-
-    const count = await indexDocument(buf, filename);
-    showStatus(t('ready').replace('{n}', count), 'success');
-    document.getElementById('welcome').style.display = 'none';
-    document.getElementById('drive-url').value = '';
-  } catch(e) {
-    showStatus(t('err-drive'), 'error');
+  const patterns = [
+    /\/d\/([a-zA-Z0-9_-]+)/,
+    /id=([a-zA-Z0-9_-]+)/,
+    /\/file\/d\/([a-zA-Z0-9_-]+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) { fileId = m[1]; break; }
   }
+
+  if (!fileId) {
+    showStatus('❌ Could not extract file ID from the link. Use a standard Google Drive share link.', 'error');
+    return;
+  }
+
+  // Direct download URL (works for public files)
+  const downloadUrl = `https://drive.google.com/uc?export=download&confirm=t&id=${fileId}`;
+
+  // CORS proxies to try in order
+  const proxies = [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://cors-anywhere.herokuapp.com/${u}`,
+  ];
+
+  showStatus('⏳ Connecting to Google Drive...', 'info');
+
+  for (let i = 0; i < proxies.length; i++) {
+    const proxyUrl = proxies[i](downloadUrl);
+    showStatus(`⏳ Downloading via proxy ${i + 1}/${proxies.length}...`, 'info');
+    try {
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(30000) });
+      if (!resp.ok) { console.warn(`Proxy ${i+1} failed: HTTP ${resp.status}`); continue; }
+
+      const contentType = resp.headers.get('content-type') || '';
+
+      // Google Drive returns HTML for large files (virus scan warning) — detect this
+      if (contentType.includes('text/html')) {
+        // Try to extract confirm token from the HTML and retry
+        const text = await resp.text();
+        if (text.includes('Google Drive') || text.includes('virus scan')) {
+          const tokenMatch = text.match(/confirm=([0-9A-Za-z_-]+)/);
+          if (tokenMatch) {
+            const confirmUrl = `https://drive.google.com/uc?export=download&confirm=${tokenMatch[1]}&id=${fileId}`;
+            const resp2 = await fetch(proxies[i](confirmUrl), { signal: AbortSignal.timeout(30000) });
+            if (resp2.ok) {
+              const buf = await resp2.arrayBuffer();
+              await finishDriveLoad(buf, fileId, resp2);
+              return;
+            }
+          }
+          console.warn(`Proxy ${i+1}: Got HTML (virus scan page), no confirm token`);
+          continue;
+        }
+      }
+
+      const buf = await resp.arrayBuffer();
+      await finishDriveLoad(buf, fileId, resp);
+      return;
+
+    } catch(e) {
+      console.warn(`Proxy ${i+1} error:`, e.message);
+    }
+  }
+
+  // All proxies failed
+  showStatus(`❌ Could not load file. Check:<br>
+    1. File is shared: <b>Anyone with the link → Viewer</b><br>
+    2. Try downloading manually and use "Choose files" instead`, 'error');
+}
+
+async function finishDriveLoad(buf, fileId, resp) {
+  const cd = resp.headers.get('content-disposition') || '';
+  let filename = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1]
+    || `document_${fileId}.pdf`;
+  filename = decodeURIComponent(filename.replace(/[+]/g, ' ').trim());
+
+  const count = await indexDocument(buf, filename);
+  showStatus(`✅ Loaded: ${filename} — ${count} chunks indexed`, 'success');
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('drive-url').value = '';
 }
 
 // ── Render doc list ──
