@@ -116,8 +116,13 @@
   }
   .input-row textarea:focus { border-color: var(--accent); }
   .send-btn { width: 44px; height: 44px; border-radius: 3px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; }
+  .mic-btn { width: 44px; height: 44px; border-radius: 3px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 20px; background: var(--bg3); border: 1px solid var(--border); color: var(--muted); cursor: pointer; transition: all .2s; }
+  .mic-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mic-btn.listening { background: var(--accent); border-color: var(--accent2); color: white; animation: pulse-mic 1s infinite; }
+  @keyframes pulse-mic { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,.4); } 50% { box-shadow: 0 0 0 6px rgba(220,38,38,0); } }
   .web-toggle { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 8px; cursor: pointer; user-select: none; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px; }
   .web-toggle input { accent-color: var(--accent); }
+  .voice-bar { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
 
   /* Status */
   .status { font-size: 11px; padding: 6px 10px; border-radius: 3px; font-family: var(--mono); letter-spacing: .5px; }
@@ -398,14 +403,22 @@
   <div class="input-area">
     <div id="status-bar" style="margin-bottom:8px;display:none"></div>
     <div class="input-row">
-      <textarea id="question" rows="1" placeholder="Ask a question..." id="t-question-placeholder"
+      <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input (hold to speak)">🎤</button>
+      <textarea id="question" rows="1" placeholder="Ask a question or press 🎤 to speak..."
         onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
       <button class="btn btn-primary send-btn" onclick="ask()" id="send-btn">➤</button>
     </div>
-    <label class="web-toggle">
-      <input type="checkbox" id="use-web">
-      <span id="t-web-toggle">Also search the internet (Gemini grounding)</span>
-    </label>
+    <div class="voice-bar">
+      <label class="web-toggle">
+        <input type="checkbox" id="use-web">
+        <span id="t-web-toggle">Also search the internet (Gemini grounding)</span>
+      </label>
+      <label class="web-toggle" style="margin-left:auto">
+        <input type="checkbox" id="tts-toggle" onchange="onTtsToggle(this)">
+        <span>🔊 Read answers aloud</span>
+      </label>
+      <select id="tts-voice" style="font-size:11px;font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 4px;display:none"></select>
+    </div>
   </div>
 </div>
 
@@ -1302,7 +1315,9 @@ Answer based ONLY on the context above:`;
 
     console.log('[RAG] answer:', answer);
     removeLoading(loadId);
-    addMessage('assistant', answer || '(empty response from API)', relevant);
+    const finalAnswer = answer || '(empty response from API)';
+    addMessage('assistant', finalAnswer, relevant);
+    speakText(finalAnswer);
   } catch(e) {
     removeLoading(loadId);
     addMessage('assistant', `❌ Error: ${e.message}`);
@@ -1394,6 +1409,131 @@ function toggleHelp() {
 
 function handleKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
+}
+
+// ── Voice Input (Speech Recognition) ──
+let recognition = null;
+let isListening = false;
+
+function initRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+  const r = new SpeechRecognition();
+  r.continuous = false;
+  r.interimResults = true;
+  r.lang = 'en-US';
+
+  r.onstart = () => {
+    isListening = true;
+    document.getElementById('mic-btn').classList.add('listening');
+    showStatus('🎤 Listening... speak now', 'info');
+  };
+
+  r.onresult = (e) => {
+    const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+    document.getElementById('question').value = transcript;
+    autoResize(document.getElementById('question'));
+  };
+
+  r.onend = () => {
+    isListening = false;
+    document.getElementById('mic-btn').classList.remove('listening');
+    hideStatus();
+    // Auto-send if there's text
+    const q = document.getElementById('question').value.trim();
+    if (q) ask();
+  };
+
+  r.onerror = (e) => {
+    isListening = false;
+    document.getElementById('mic-btn').classList.remove('listening');
+    if (e.error === 'not-allowed') {
+      showStatus('❌ Microphone access denied. Allow mic in browser settings.', 'error');
+    } else {
+      showStatus(`❌ Voice error: ${e.error}`, 'error');
+    }
+  };
+
+  return r;
+}
+
+function toggleMic() {
+  if (isListening) {
+    if (recognition) recognition.stop();
+    return;
+  }
+  if (!recognition) recognition = initRecognition();
+  if (!recognition) {
+    showStatus('❌ Voice input not supported in this browser. Use Chrome or Edge.', 'error');
+    return;
+  }
+  try { recognition.start(); } catch(e) { console.warn('mic start error:', e); }
+}
+
+// ── Voice Output (Text-to-Speech) ──
+let ttsEnabled = false;
+let ttsVoices = [];
+
+function loadVoices() {
+  ttsVoices = window.speechSynthesis.getVoices();
+  const sel = document.getElementById('tts-voice');
+  sel.innerHTML = '';
+  // Prefer English voices first
+  const sorted = [...ttsVoices].sort((a,b) => {
+    const aEn = a.lang.startsWith('en') ? 0 : 1;
+    const bEn = b.lang.startsWith('en') ? 0 : 1;
+    return aEn - bEn;
+  });
+  sorted.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${v.name} (${v.lang})`;
+    // Default: prefer Google English or first English
+    if (v.lang === 'en-US' && v.name.includes('Google')) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function onTtsToggle(cb) {
+  ttsEnabled = cb.checked;
+  const sel = document.getElementById('tts-voice');
+  sel.style.display = ttsEnabled ? 'inline-block' : 'none';
+  if (ttsEnabled && ttsVoices.length === 0) loadVoices();
+  if (!ttsEnabled) window.speechSynthesis.cancel();
+}
+
+function speakText(text) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  // Strip markdown symbols for cleaner speech
+  const clean = text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/SOURCE:.*?(?=\n|$)/g, '')
+    .replace(/---/g, '')
+    .trim();
+
+  window.speechSynthesis.cancel(); // stop any previous
+  const utter = new SpeechSynthesisUtterance(clean);
+  utter.rate = 0.95;
+  utter.pitch = 1.0;
+
+  const sel = document.getElementById('tts-voice');
+  const idx = parseInt(sel.value);
+  if (!isNaN(idx) && ttsVoices[idx]) {
+    utter.voice = ttsVoices[idx];
+    utter.lang = ttsVoices[idx].lang;
+  }
+
+  window.speechSynthesis.speak(utter);
+}
+
+// Load voices when available (Chrome loads them async)
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
 }
 </script>
 </body>
